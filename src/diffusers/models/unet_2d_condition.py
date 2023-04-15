@@ -517,6 +517,25 @@ class UNet2DConditionModel(ModelMixin, ConfigMixin, UNet2DConditionLoadersMixin)
         # The overall upsampling factor is equal to 2 ** (# num of upsampling layears).
         # However, the upsampling interpolation output size can be forced to fit any upsampling size
         # on the fly if necessary.
+
+        import os
+        offload_unet_through_remote_ipu = os.environ.get("OFFLOAD_UNET_THROUGH_REMOTE_IPU")
+        skip_denoise_step = os.environ.get("SKIP_DENOISE_STEP")
+        remote_ipu_service_address = os.environ.get("REMOTE_IPU_SERVICE_ADDRESS")
+
+        if skip_denoise_step != None and skip_denoise_step.lower() == 'true':
+            if not return_dict:
+                return (sample,)
+
+            return UNet2DConditionOutput(sample=sample)
+
+        if offload_unet_through_remote_ipu != None and offload_unet_through_remote_ipu.lower() == "true":
+            if not return_dict:
+                return (sample,)
+
+            return UNet2DConditionOutput(sample=sample)
+
+
         default_overall_up_factor = 2**self.num_upsamplers
 
         # upsample size should be forwarded when sample is not a multiple of `default_overall_up_factor`
