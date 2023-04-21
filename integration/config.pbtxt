@@ -1,0 +1,49 @@
+name: "unet"
+backend: "poplar"
+max_batch_size: 2
+input [
+    {
+        name: "input"
+        data_type: TYPE_FP16
+        dims: [ 4, 64, 64 ]
+    },
+    {
+        name: "input/1"
+        data_type: TYPE_FP16
+	dims: [1]
+	reshape: { shape: [] }
+    },
+    {
+        name: "input/2"
+        data_type: TYPE_FP16
+        dims: [ 77, 768]
+    }
+]
+output [
+    {
+        name: "conv_out/Conv:0"
+        data_type: TYPE_FP16
+        dims: [ 4, 64, 64 ]
+    }
+]
+
+parameters [
+    {
+        key: "synchronous_execution"
+        value:{string_value: "1"}
+    },
+    {
+        key: "timeout_ns"
+        value:{string_value: "500000"}
+    },
+    {
+        key: "executable_path"
+        value:{string_value: "/models/unet/1/executable.popef"}
+    },
+    {
+        key: "check_package_hash"
+        value:{string_value: "false"}
+    }
+]
+
+instance_group [{ kind: KIND_CPU }]

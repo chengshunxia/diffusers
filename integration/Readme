@@ -1,0 +1,9 @@
+1) export_popef_4_unet.py: generate popef for unet with IPU
+2) config.pbtxt:  configuration file for unet on IPU
+3) Dockerfile:	  generate a docker image with Dockerfile, start the docker container and run 
+	docker run --rm -it --network=host --privileged unet_triton:xiachsh /bin/bash
+	tritonserver --model-repository /models/ --backend-directory /opt/triton/lib/
+4) triton_cli.py: 
+	run the client with 
+	pip install tritonclient[grpc]	
+	python3 triton_cli.py
