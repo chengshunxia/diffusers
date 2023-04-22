@@ -17,6 +17,8 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import torch
 import torch.nn as nn
 import torch.utils.checkpoint
+import tritonclient.grpc as grpcclient
+import numpy as np
 
 from ..configuration_utils import ConfigMixin, register_to_config
 from ..loaders import UNet2DConditionLoadersMixin
@@ -521,7 +523,7 @@ class UNet2DConditionModel(ModelMixin, ConfigMixin, UNet2DConditionLoadersMixin)
         import os
         offload_unet_through_remote_ipu = os.environ.get("OFFLOAD_UNET_THROUGH_REMOTE_IPU")
         skip_denoise_step = os.environ.get("SKIP_DENOISE_STEP")
-        remote_ipu_service_address = os.environ.get("REMOTE_IPU_SERVICE_ADDRESS")
+        remote_ipu_service_grpc_address = os.environ.get("REMOTE_IPU_SERVICE_ADDRESS")
 
         if skip_denoise_step != None and skip_denoise_step.lower() == 'true':
             if not return_dict:
@@ -530,10 +532,51 @@ class UNet2DConditionModel(ModelMixin, ConfigMixin, UNet2DConditionLoadersMixin)
             return UNet2DConditionOutput(sample=sample)
 
         if offload_unet_through_remote_ipu != None and offload_unet_through_remote_ipu.lower() == "true":
-            if not return_dict:
+            success_offload = False
+            try:
+                original_device = sample.device
+                triton_client = grpcclient.InferenceServerClient(
+                    url=remote_ipu_service_grpc_address)
+                model_name = "unet"
+                inputs = []
+                outputs = []
+                inputs.append(grpcclient.InferInput('input', [2, 4, 64, 64], "FP16"))
+                inputs.append(grpcclient.InferInput('input/1', [2, 1], "FP16"))
+                inputs.append(grpcclient.InferInput('input/2', [2, 77, 768], "FP16"))
+
+
+                inputs[0].set_data_from_numpy(sample.to("cpu").numpy().astype(np.float16))
+                inputs[1].set_data_from_numpy(timestep.to("cpu").numpy().reshape([2,1]).astype(np.float16))
+                inputs[2].set_data_from_numpy(encoder_hidden_states.to("cpu").numpy().astype(np.float16))
+
+                outputs.append(grpcclient.InferRequestedOutput('conv_out/Conv:0'))
+
+                results = triton_client.infer(
+                    model_name=model_name,
+                    inputs=inputs,
+                    outputs=outputs,
+                    headers={'test': '1'},
+                    compression_algorithm=None)
+
+                statistics = triton_client.get_inference_statistics(model_name=model_name)
+
+                if len(statistics.model_stats) != 1:
+                    raise Exception ("GRPC call model inference: {} to {} failed".format(
+                       model_name,
+                       remote_ipu_service_grpc_address))
+                del triton_client
+                output0_data = results.as_numpy('conv_out/Conv:0')
+                sample = torch.tensor(output0_data).to(original_device)
+                success_offload = True
+            except Exception as ex:
+                success_offload = False
+                print (ex)
+
+            if not return_dict and success_offload:
                 return (sample,)
 
-            return UNet2DConditionOutput(sample=sample)
+            if success_offload:
+                return UNet2DConditionOutput(sample=sample)
 
 
         default_overall_up_factor = 2**self.num_upsamplers
